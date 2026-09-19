@@ -5,7 +5,7 @@
 // ============================================================
 
 import { useEffect, useState, useRef } from 'react'
-import { Bell, Package, FileSignature, Clock, X, CheckCheck, FileCheck, Wallet, Truck, Receipt, AlertTriangle, Calendar, CheckSquare } from 'lucide-react'
+import { Bell, Package, Clock, X, CheckCheck, FileCheck, Wallet, Truck, Receipt, AlertTriangle, Calendar, CheckSquare } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
@@ -97,8 +97,17 @@ export default function Notifications() {
     return () => clearTimeout(t)
   }, [toastRappel])
 
-  // ── Blocs de notifications, un par thème — appelés selon le rôle ──
+  // ── Blocs de notifications, groupés par domaine — appelés selon le rôle ──
+  //
+  // Livraison échelonnée (voir README.md) : seuls les blocs qui
+  // interrogent des tables/vues déjà livrées au Mois 1 (stock, fiches,
+  // tâches, véhicules, commandes/livraisons génériques) sont inclus ici.
+  // notifsContratsExpirant() (vue v_contrats_expirant, module Contrats)
+  // et notifsCreancesRetard() (règle des 24h du Cas 3 "Crédit", logique
+  // du tunnel Commandes) sont retirées de cette livraison — fournies
+  // avec les Mois 2 et 3 respectivement.
 
+  // — Domaine Stock —
   async function notifsStockFaible() {
     const { data: stock } = await supabase.from('v_stock_disponible').select('stock_bouteilles').single()
     const cartons = Math.floor((Number(stock?.stock_bouteilles) || 0) / 24)
@@ -110,17 +119,7 @@ export default function Notifications() {
     }]
   }
 
-  async function notifsContratsExpirant() {
-    const { data } = await supabase.from('v_contrats_expirant').select('*')
-    return (data || []).map(c => ({
-      id: `contrat-${c.id}`, icon: FileSignature,
-      color: c.jours_restants <= 7 ? 'text-red-500' : 'text-amber-500',
-      bg:    c.jours_restants <= 7 ? 'bg-red-50' : 'bg-amber-50',
-      titre: 'Contrat à renouveler', message: `${c.nom_entreprise} — expire dans ${c.jours_restants}j`,
-      action: '/contrats', urgence: c.jours_restants <= 7,
-    }))
-  }
-
+  // — Domaine CRM —
   async function notifsRelances() {
     const aujourdhui = new Date().toISOString().split('T')[0]
     const { data } = await supabase.from('prospects')
@@ -133,6 +132,7 @@ export default function Notifications() {
     }))
   }
 
+  // — Domaine Fiches / Commandes (génériques, pas la logique du tunnel) —
   // AJOUT : fiches de la gestionnaire en attente de validation (commercial/admin)
   async function notifsFichesAValider() {
     const { count } = await supabase.from('fiches_commande')
@@ -176,24 +176,7 @@ export default function Notifications() {
     }]
   }
 
-  // AJOUT : créances Cas 3 dont l'échéance 24h est dépassée (comptable/admin)
-  async function notifsCreancesRetard() {
-    const { data } = await supabase.from('commandes')
-      .select('id, date_livraison_ts, date_livraison')
-      .eq('cas_vente', 'Credit').eq('statut', 'Livree_creance_active')
-    const enRetard = (data || []).filter(c => {
-      const base = c.date_livraison_ts || c.date_livraison
-      if (!base) return false
-      return (new Date(base).getTime() + 24 * 60 * 60 * 1000) <= Date.now()
-    })
-    if (enRetard.length === 0) return []
-    return [{
-      id: 'creances-retard', icon: AlertTriangle, color: 'text-red-500', bg: 'bg-red-50',
-      titre: 'Créances en retard', message: `${enRetard.length} client${enRetard.length > 1 ? 's' : ''} au-delà des 24h`,
-      action: '/credits', urgence: true,
-    }]
-  }
-
+  // — Domaine Livraisons/Flotte —
   // AJOUT : commandes planifiées, sans chauffeur/véhicule affecté (logistique/admin)
   async function notifsCommandesAAffecter() {
     const { data: cmds } = await supabase.from('commandes')
@@ -236,6 +219,7 @@ export default function Notifications() {
     }]
   }
 
+  // — Domaine RH/Administratif —
   // AJOUT : paiements admin + renouvellements soumis par la gestionnaire (logistique/admin)
   async function notifsFilesLogistique() {
     const [{ count: nbPaiements }, { count: nbRenouv }] = await Promise.all([
@@ -285,6 +269,7 @@ export default function Notifications() {
     return notifs
   }
 
+  // — Domaine Tâches —
   // AJOUT (demande Fatouma) : rappel des tâches du jour pas encore
   // cochées, dès 20h. Déclenché une seule fois par jour (marqueur
   // localStorage, même pattern que `notifs_lues`) — sinon le bip
@@ -320,14 +305,14 @@ export default function Notifications() {
 
     if (role === 'admin') {
       blocs = await Promise.all([
-        notifsStockFaible(), notifsContratsExpirant(), notifsRelances(),
+        notifsStockFaible(), notifsRelances(),
         notifsFichesAValider(), notifsCommandesEnAttente(), notifsComptantAEncaisser(),
-        notifsCreancesRetard(), notifsCommandesAAffecter(), notifsDocumentsVehicules(),
+        notifsCommandesAAffecter(), notifsDocumentsVehicules(),
         notifsFilesLogistique(),
       ])
     } else if (role === 'commercial') {
       blocs = await Promise.all([
-        notifsFichesAValider(), notifsCommandesEnAttente(), notifsRelances(), notifsContratsExpirant(),
+        notifsFichesAValider(), notifsCommandesEnAttente(), notifsRelances(),
         notifsTachesDuJour(),
       ])
     } else if (role === 'logistique') {
@@ -336,7 +321,7 @@ export default function Notifications() {
       ])
     } else if (role === 'comptable') {
       blocs = await Promise.all([
-        notifsComptantAEncaisser(), notifsCreancesRetard(),
+        notifsComptantAEncaisser(),
       ])
     } else if (role === 'gestionnaire') {
       blocs = await Promise.all([
