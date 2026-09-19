@@ -1,0 +1,30 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #f1f5f9;
+  color: #0f172a;
+  margin: 0;
+}
+
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+/* AJOUT (refonte dashboard Commercial, direction "Étagère à trophées") :
+   pop-in pour un badge qui vient de se débloquer — Tailwind n'a pas de
+   plugin d'animation installé, donc keyframe custom minimal ici plutôt
+   que d'ajouter une dépendance pour un seul effet. */
+@keyframes badge-pop-in {
+  0%   { opacity: 0; transform: scale(0.5); }
+  60%  { opacity: 1; transform: scale(1.12); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.animate-badge-pop {
+  animation: badge-pop-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
